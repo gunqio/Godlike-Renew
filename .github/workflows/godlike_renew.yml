@@ -351,7 +351,7 @@ jobs:
           GODLIKE_ACCOUNTS: ${{ secrets.GODLIKE_ACCOUNTS }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
+         # PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           HEADLESS: 'false'
         run: |
             xvfb-run --auto-servernum python godlike-renew.py
