@@ -16,50 +16,38 @@ jobs:
       - name: 📥 下载代码
         uses: actions/checkout@v4
 
-      # ========== 拉取私有仓库脚本 ==========
+      # ========== 新增：拉取私有仓库的 restart_minestrator.py ==========
       - name: 📥 拉取私有仓库脚本
         run: |
           git clone --depth 1 https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/gunqio/zhiyong.git temp_private_repo
           cp temp_private_repo/restart_minestrator.py ./
           rm -rf temp_private_repo
+      # ==============================================================
 
       - name: 🐍 设置 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # ========== 修复：Xray 代理转发（变量名+调试+错误处理） ==========
       - name: 🛡️ 启动 Xray 代理转发
         env:
-          XRAY_CONFIG_JSON: ${{ secrets.XRAY_CONFIG_JSON }}
+          XRAY_CONFIG: ${{ secrets.XRAY_CONFIG_JSON }}
         run: |
-          set -e
-          
           echo "📦 下载并解压 Xray-core..."
           wget -q https://github.com/XTLS/Xray-core/releases/download/v25.12.8/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray-core
           
           echo "📝 写入节点配置..."
-          echo "$XRAY_CONFIG_JSON" > xray-core/config.json
-          
-          # 调试：检查配置是否写入成功
-          echo "🔍 配置文件内容检查（前200字符）："
-          head -c 200 xray-core/config.json
-          echo ""
+          echo "$XRAY_CONFIG" > xray-core/config.json
           
           echo "🚀 启动 Xray 服务..."
           cd xray-core
           nohup ./xray run -c config.json > xray.log 2>&1 &
-          echo $! > xray.pid
-          sleep 5
-          
-          # 调试：检查进程是否运行
-          echo "🔍 检查 Xray 进程："
-          pgrep -f xray || echo "❌ Xray 进程未启动"
+          sleep 3
           
           echo "✅ Xray 已启动，测试代理连通性并获取出口 IP..."
-          curl -v -x http://127.0.0.1:8080 https://api.ipify.org
-          echo ""
+          curl -s -x http://127.0.0.1:8080 https://api.ipify.org
+          echo "" # 换行
 
       - name: 🛠️ 安装系统依赖
         run: |
@@ -90,10 +78,3 @@ jobs:
         with:
           name: debug-screenshots
           path: "*.png"
-
-      - name: 📄 上传 Xray 日志（调试用）
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xray-logs
-          path: "xray-core/xray.log"
