@@ -26,6 +26,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install seleniumbase requests
+          # 自动安装对应浏览器与驱动（关键，对齐成功环境）
+          sb install
           sudo apt-get update
           sudo apt-get install -y xvfb unzip
           
