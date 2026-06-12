@@ -25,7 +25,7 @@ def timeout_handler(signum, frame):
 if not IS_WINDOWS:
     signal.signal(signal.SIGALRM, timeout_handler)
 
-# ==================== 登录逻辑（修复正则报错 + 双文本兼容） ====================
+# ==================== 登录逻辑（精准点击按钮版） ====================
 def login_with_playwright(page):
     cookie_val = os.environ.get("PTERODACTYL_COOKIE", "")
     email = os.environ.get("PTERODACTYL_EMAIL", "")
@@ -60,31 +60,21 @@ def login_with_playwright(page):
     print("🔐 使用账号密码登录...")
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     try:
-        # 兼容两种不同文案的按钮，逐个尝试
-        link_a = page.locator('a:has-text("Through login/password")')
-        link_b = page.locator('a:has-text("Through Login/Password")')
+        # 精确匹配并点击
+        link_loc = page.locator('a:has-text("Through Login/Password")')
+        link_loc.wait_for(state="visible", timeout=15000)
+        print("正在点击 'Through Login/Password' 按钮...")
+        link_loc.click()
 
-        clicked = False
-        if link_a.wait_for(state="visible", timeout=8000):
-            link_a.click()
-            clicked = True
-            print("✅ 点击链接: Through login/password")
-        elif link_b.wait_for(state="visible", timeout=8000):
-            link_b.click()
-            clicked = True
-            print("✅ 点击链接: Through Login/Password")
-        else:
-            print("ℹ️ 未找到切换链接，页面已直接显示登录表单")
-
-        # 等待登录表单
+        # 等待表单
         email_selector = 'input[name="username"]'
         password_selector = 'input[name="password"]'
-        login_btn = 'button[type="submit"]:has-text("Login")'
+        login_btn = 'button[type="submit"]'
 
         page.wait_for_selector(email_selector, timeout=30000)
         page.wait_for_selector(password_selector, timeout=30000)
 
-        print("正在填写账号密码...")
+        print("✅ 表单已加载，填写账号密码...")
         page.fill(email_selector, email)
         page.fill(password_selector, pwd)
 
@@ -93,7 +83,7 @@ def login_with_playwright(page):
             page.click(login_btn)
 
         if "login" in page.url:
-            print("❌ 账号密码登录失败")
+            print("❌ 账号密码登录失败，请检查凭据")
             page.screenshot(path="login_fail.png")
             return False
 
