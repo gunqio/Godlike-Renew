@@ -1,31 +1,29 @@
-name: Auto Renew Godlike
-
-on:  
-  #schedule:
-    #- cron: '17 9 * * *'  # 每天运行一次
-  workflow_dispatch:  # 允许手动触发
+name: Godlike 续期
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
 
 jobs:
-  auto_renew_godlike:
-    runs-on: ubuntu-22.04
+  add_time_job:
+    name: 运行续期脚本
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      - name: Checkout private repository
-        uses: actions/checkout@v6
-        with:
-          repository: gunqio/zhiyong
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      - name: 拉取仓库
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: 设置 Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.11'
 
-      - name: Install dependencies
+      - name: 安装依赖
         run: |
-          pip install seleniumbase requests
-          sudo apt-get update
-          sudo apt-get install -y xvfb unzip
-          
+          pip install requests playwright pynacl
+          playwright install --with-deps chromium
+
       - name: 安装并启动代理
         env:
           PROXY_NODE: ${{ secrets.PROXY_NODE }}
@@ -35,7 +33,7 @@ jobs:
             exit 0
           fi
           
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
           
           python3 << 'PYEOF'
@@ -50,7 +48,6 @@ jobs:
               print("[ERROR] PROXY_NODE 为空")
               sys.exit(1)
 
-          # 解析协议
           if url.startswith("vless://"):
               protocol = "vless"
               content = url[8:]
@@ -65,7 +62,6 @@ jobs:
               content = url[5:]
           elif url.startswith("socks5://") or url.startswith("socks://"):
               protocol = "socks5"
-              # 直接使用外部 SOCKS5
               content = url.split("://")[1].split("#")[0]
               if "@" in content:
                   server = content.split("@")[1].split(":")[0]
@@ -79,21 +75,19 @@ jobs:
               print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
               sys.exit(1)
 
-          # 去除备注
           if "#" in content:
               content = content.rsplit("#", 1)[0]
 
           config = {
               "log": {"loglevel": "warning"},
               "inbounds": [
-                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
+                  {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
               ],
               "outbounds": []
           }
 
           if protocol == "vless":
-              # vless://uuid@server:port?params
               uuid, rest = content.split("@", 1)
               if "?" in rest:
                   host_port, params_str = rest.split("?", 1)
@@ -132,18 +126,15 @@ jobs:
                   }
               }
               
-              # 添加 flow
               if flow:
                   outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
               
-              # Reality 设置
               if security == "reality":
                   outbound["streamSettings"]["realitySettings"] = {
                       "serverName": sni,
                       "fingerprint": fp,
                       "publicKey": pbk
                   }
-              # TLS 设置
               elif security == "tls":
                   outbound["streamSettings"]["tlsSettings"] = {
                       "serverName": sni,
@@ -151,13 +142,11 @@ jobs:
                       "allowInsecure": False
                   }
               
-              # WebSocket 设置
               if network == "ws":
                   outbound["streamSettings"]["wsSettings"] = {
                       "path": path,
                       "headers": {"Host": host}
                   }
-              # gRPC 设置
               elif network == "grpc":
                   service_name = params.get("serviceName", [""])[0]
                   outbound["streamSettings"]["grpcSettings"] = {
@@ -167,9 +156,7 @@ jobs:
               config["outbounds"].append(outbound)
 
           elif protocol == "vmess":
-              # vmess://base64
               try:
-                  # 处理 URL 安全的 base64
                   padding = 4 - len(content) % 4
                   if padding != 4:
                       content += "=" * padding
@@ -223,7 +210,6 @@ jobs:
               config["outbounds"].append(outbound)
 
           elif protocol == "trojan":
-              # trojan://password@server:port?params
               password, rest = content.split("@", 1)
               if "?" in rest:
                   host_port, params_str = rest.split("?", 1)
@@ -273,16 +259,13 @@ jobs:
               config["outbounds"].append(outbound)
 
           elif protocol == "ss":
-              # ss://base64@server:port 或 ss://base64#name
               try:
                   if "@" in content:
-                      # 新格式: base64(method:password)@server:port
                       encoded, server_part = content.split("@", 1)
                       decoded = base64.b64decode(encoded + "==").decode("utf-8")
                       method, password = decoded.split(":", 1)
                       address, port = server_part.split(":", 1)
                   else:
-                      # 旧格式: base64(method:password@server:port)
                       decoded = base64.b64decode(content + "==").decode("utf-8")
                       if "@" in decoded:
                           user_part, server_part = decoded.split("@", 1)
@@ -310,31 +293,27 @@ jobs:
               
               config["outbounds"].append(outbound)
 
-          # 保存配置
           with open("xray_config.json", "w") as f:
               json.dump(config, f, indent=2)
           
           print("[INFO] ✅ 代理配置已生成")
           PYEOF
           
-          # 检查是否使用外部 SOCKS5
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
           fi
           
-          # 启动 Xray
           ./xray/xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
           
-          # 测试代理
           echo "[INFO] 测试代理连接..."
           for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+            if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
-              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
@@ -342,16 +321,35 @@ jobs:
           done
           
           echo "[ERROR] ❌ 代理连接失败"
-          echo "--- Xray 日志 ---"
           cat xray.log
           exit 1
-
-      - name: Run Script with xvfb-run
+          
+      - name: 运行续期脚本
         env:
-          GODLIKE_ACCOUNTS: ${{ secrets.GODLIKE_ACCOUNTS }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-         # PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-          HEADLESS: 'false'
-        run: |
-            xvfb-run --auto-servernum python godlike-renew.py
+          GODLIKE_1: ${{ secrets.GODLIKE_1 }}
+          GODLIKE_2: ${{ secrets.GODLIKE_2 }}   
+          GODLIKE_3: ${{ secrets.GODLIKE_3 }}
+          GODLIKE_4: ${{ secrets.GODLIKE_4 }}
+          GODLIKE_5: ${{ secrets.GODLIKE_5 }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        run: python main.py
+
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: error-screenshots
+#          path: Godlike/*.png
+
+      - name: 清理历史
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
