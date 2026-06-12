@@ -1,0 +1,73 @@
+name: Minestrator-Restart
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  run_minestrator_restart:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 下载代码
+        uses: actions/checkout@v4
+
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 下载并启动 Xray 代理
+        env:
+          V2RAY_CONFIG: ${{ secrets.V2RAY_CONFIG }}
+        run: |
+          curl -sL https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -o xray.zip
+          unzip -q xray.zip && chmod +x xray
+          echo "$V2RAY_CONFIG" > config.json
+          ./xray run -c config.json &
+          sleep 5
+          echo "直连 IP：$(curl -s --max-time 5 ifconfig.me || echo '失败')"
+          echo "代理 IP：$(curl -s --max-time 10 --socks5 127.0.0.1:10808 ifconfig.me || echo '代理失败，请检查 V2RAY_CONFIG')"
+
+      - name: 🛠️ 安装系统依赖
+        run: |
+          sudo apt-get update
+          # 修复：ubuntu-latest 默认源没有 google-chrome-stable，改用 seleniumbase 内置安装
+          sudo apt-get install -y xvfb x11-utils xdotool scrot
+
+      - name: 🐍 安装 Python 依赖
+        run: |
+          pip install seleniumbase
+          seleniumbase install chromedriver
+          seleniumbase install chrome
+
+      - name: 🚀 运行脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          MINESTRATOR_ACCOUNT: ${{ secrets.MINESTRATOR_ACCOUNT }}
+          MINESTRATOR_SERVER_ID: ${{ secrets.MINESTRATOR_SERVER_ID }}
+          MINESTRATOR_AUTH: ${{ secrets.MINESTRATOR_AUTH }}
+          V2RAY_CONFIG: ${{ secrets.V2RAY_CONFIG }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python restart_minestrator.py
+
+      - name: 📸 上传截图（调试用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: "*.png"
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
