@@ -15,6 +15,14 @@ jobs:
       - name: 📥 下载代码
         uses: actions/checkout@v4
 
+      # ========== 新增：拉取私有仓库脚本 ==========
+      - name: 📥 拉取私库 restart_minestrator.py
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          curl -sL "https://${GH_TOKEN}@raw.githubusercontent.com/gunqio/zhiyong/main/restart_minestrator.py" -o restart_minestrator.py
+      # ==========================================
+
       - name: 🐍 设置 Python
         uses: actions/setup-python@v4
         with:
