@@ -34,7 +34,6 @@ jobs:
 
       - name: Run Time Adder Script
         env:
-          PTERODACTYL_COOKIE: ${{ secrets.PTERODACTYL_COOKIE }}
           PTERODACTYL_EMAIL: ${{ secrets.PTERODACTYL_EMAIL }}
           PTERODACTYL_PASSWORD: ${{ secrets.PTERODACTYL_PASSWORD }}
         # 使用 -u 参数禁用输出缓冲，确保日志实时显示
