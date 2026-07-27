@@ -12,13 +12,11 @@ jobs:
       - name: 📥 下载代码
         uses: actions/checkout@v4
 
-      # ========== 拉取私有仓库的 restart_minestrator.py ==========
       - name: 📥 拉取私有仓库脚本
         run: |
           git clone --depth 1 https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/gunqio/zhiyong.git temp_private_repo
           cp temp_private_repo/restart_minestrator.py ./
           rm -rf temp_private_repo
-      # ============================================================
 
       - name: 🐍 设置 Python
         uses: actions/setup-python@v4
@@ -42,7 +40,6 @@ jobs:
           XRAY_PID=$!
           echo "Xray PID: $XRAY_PID"
 
-          # 等待代理端口就绪（最多 15 秒）
           for i in $(seq 1 15); do
             sleep 1
             if curl -s --connect-timeout 2 http://127.0.0.1:8080 -o /dev/null 2>/dev/null; then
@@ -51,49 +48,25 @@ jobs:
             fi
             if ! kill -0 $XRAY_PID 2>/dev/null; then
               echo "❌ Xray 进程已退出!"
-              echo "--- Xray 日志 ---"
               cat xray.log
               exit 1
             fi
           done
 
-          # 输出日志，方便排查
           echo "--- Xray 日志 ---"
           cat xray.log
 
           echo "✅ 测试代理连通性并获取出口 IP..."
-
-          # 用 curl 测试 SOCKS5 代理
           EXPORT_IP=$(curl -s --max-time 10 -x socks5h://127.0.0.1:8080 https://api.ipify.org 2>/dev/null || true)
-
           echo ""
           echo "出口 IP: ${EXPORT_IP:-FAILED}"
 
           if [ -n "$EXPORT_IP" ]; then
             echo "✅ 代理连通性测试通过，出口 IP: $EXPORT_IP"
           else
-            echo "⚠️ 代理连通性测试失败"
-            echo "   问题诊断:"
-            echo "   - SOCKS5 协议已连接但 TLS 握手失败 (SSL_ERROR_SYSCALL)"
-            echo "   - 最可能原因: Argo 隧道不在线 / 远端 VMESS 节点不可达"
-            echo "   - 不影响后续步骤，Python 脚本使用 GOST_PROXY 独立代理"
-            echo ""
-            echo "--- 诊断: 测试远程节点可达性 ---"
-            python3 << 'PYEOF'
-import socket, sys
-addr = "saas.sin.fan"
-try:
-    ip = socket.getaddrinfo(addr, 443)[0][4][0]
-    print(f"  DNS 解析 {addr} -> {ip}")
-    s = socket.create_connection((addr, 443), timeout=5)
-    s.close()
-    print(f"  TCP 连接 {addr}:443 -> 成功")
-except Exception as e:
-    print(f"  TCP 连接 {addr}:443 -> 失败: {e}")
-PYEOF
-            echo ""
-            echo "--- Xray 日志 ---"
-            cat xray.log
+            echo "⚠️ 代理连通性测试失败，但不阻断后续步骤"
+            echo "   原因: SOCKS5 已连接但 TLS 握手失败 (Argo 隧道不在线或节点不可达)"
+            echo "   Python 脚本使用 GOST_PROXY 独立代理，不受影响"
           fi
 
       - name: 🛠️ 安装系统依赖
@@ -119,7 +92,7 @@ PYEOF
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python restart_minestrator.py
 
-      - name: 📸 上传截图（调试用）
+      - name: 📸 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -131,6 +104,4 @@ PYEOF
         uses: actions/upload-artifact@v4
         with:
           name: xray-log
-          path: |
-            xray-core/xray.log
-            xray-core/config.json
+          path: xray-core/xray.log
