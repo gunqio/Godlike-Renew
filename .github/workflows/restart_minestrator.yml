@@ -12,13 +12,13 @@ jobs:
       - name: 📥 下载代码
         uses: actions/checkout@v4
 
-      # ========== 新增：拉取私有仓库的 restart_minestrator.py ==========
+      # ========== 拉取私有仓库的 restart_minestrator.py ==========
       - name: 📥 拉取私有仓库脚本
         run: |
           git clone --depth 1 https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/gunqio/zhiyong.git temp_private_repo
           cp temp_private_repo/restart_minestrator.py ./
           rm -rf temp_private_repo
-      # ==============================================================
+      # ============================================================
 
       - name: 🐍 设置 Python
         uses: actions/setup-python@v4
@@ -29,21 +29,49 @@ jobs:
         env:
           XRAY_CONFIG: ${{ secrets.XRAY_CONFIG_JSON }}
         run: |
+          set -e
+
           echo "📦 下载并解压 Xray-core..."
           wget -q https://github.com/XTLS/Xray-core/releases/download/v25.12.8/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray-core
-          
+
           echo "📝 写入节点配置..."
           echo "$XRAY_CONFIG" > xray-core/config.json
-          
+
           echo "🚀 启动 Xray 服务..."
           cd xray-core
-          nohup ./xray run -c config.json > xray.log 2>&1 &
-          sleep 3
-          
-          echo "✅ Xray 已启动，测试代理连通性并获取出口 IP..."
-          curl -s -x http://127.0.0.1:8080 https://api.ipify.org
-          echo "" # 换行
+          ./xray run -c config.json > xray.log 2>&1 &
+          XRAY_PID=$!
+          echo "Xray PID: $XRAY_PID"
+
+          # 等待代理端口就绪（最多 15 秒）
+          for i in $(seq 1 15); do
+            sleep 1
+            if curl -s --connect-timeout 2 http://127.0.0.1:8080 -o /dev/null 2>/dev/null; then
+              echo "✅ 代理端口 8080 已就绪 (等待 ${i}s)"
+              break
+            fi
+            if ! kill -0 $XRAY_PID 2>/dev/null; then
+              echo "❌ Xray 进程已退出!"
+              echo "--- Xray 日志 ---"
+              cat xray.log
+              exit 1
+            fi
+          done
+
+          # 输出日志，方便排查
+          echo "--- Xray 日志 ---"
+          cat xray.log
+
+          echo "✅ 测试代理连通性并获取出口 IP..."
+          EXPORT_IP=$(curl -s --proxy-tunnel -x http://127.0.0.1:8080 https://api.ipify.org || echo "FAILED")
+          echo ""
+          echo "出口 IP: $EXPORT_IP"
+
+          if [ "$EXPORT_IP" = "FAILED" ]; then
+            echo "❌ 代理连通性测试失败，请检查 XRAY_CONFIG_JSON 配置"
+            exit 1
+          fi
 
       - name: 🛠️ 安装系统依赖
         run: |
@@ -74,3 +102,12 @@ jobs:
         with:
           name: debug-screenshots
           path: "*.png"
+
+      - name: 📋 上传 Xray 日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xray-log
+          path: |
+            xray-core/xray.log
+            xray-core/config.json
