@@ -64,7 +64,7 @@ jobs:
           cat xray.log
 
           echo "✅ 测试代理连通性并获取出口 IP..."
-          EXPORT_IP=$(curl -s --proxy-tunnel -x http://127.0.0.1:8080 https://api.ipify.org || echo "FAILED")
+          EXPORT_IP=$(curl -s -x http://127.0.0.1:8080 https://api.ipify.org || echo "FAILED")
           echo ""
           echo "出口 IP: $EXPORT_IP"
 
